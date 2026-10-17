@@ -1,10 +1,23 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#a62632">
+
 <title>HolterReport — Générateur de compte rendu</title>
+
+<!-- Icônes de l'application -->
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+
+<!-- Configuration de l'application web -->
+<link rel="manifest" href="./manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="HolterReport">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
 <style>
 :root{color-scheme:light;--bg:#f7f3f4;--card:#fff;--field:#f2f2f7;--text:#17171b;--muted:#696970;--line:#e5e1e3;--accent:#a62632;--accent2:#861e28;--green:#e4f0df;--orange:#fae5d8;--blue:#e0edf7;--shadow:0 2px 12px #2510180a}
 @media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#171619;--card:#242226;--field:#302e33;--text:#f5f2f3;--muted:#b6b1b5;--line:#403c42;--accent:#e05b66;--accent2:#f07a83;--green:#263529;--orange:#3c2c25;--blue:#263541;--shadow:0 2px 12px #0003}}
@@ -16,8 +29,6 @@ h2{font-size:18px;margin:0 0 14px;letter-spacing:-.2px}h3{font-size:15px;margin:
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.field{min-width:0}label{display:block;font-size:13px;font-weight:650;margin:0 0 5px;color:var(--muted)}input,select,textarea{width:100%;min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--text);padding:10px 11px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 16%,transparent)}textarea{resize:vertical;min-height:70px}.full{grid-column:1/-1}.checks{display:flex;flex-wrap:wrap;gap:8px}.check{display:flex;align-items:center;gap:7px;background:var(--field);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px}.check input{width:auto;margin:0;accent-color:var(--accent)}.hint{font-size:12px;color:var(--muted);margin-top:5px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}button{border:0;border-radius:11px;padding:11px 15px;font:inherit;font-weight:700;cursor:pointer}.primary{background:var(--accent);color:white}.primary:hover{background:var(--accent2)}.secondary{background:var(--field);color:var(--text);border:1px solid var(--line)}.report{position:sticky;top:14px}.report textarea{min-height:470px;background:var(--card);line-height:1.65}.status{font-size:12px;color:var(--muted);margin-top:8px}.pill{display:inline-block;border-radius:999px;background:var(--field);padding:4px 8px;font-size:12px;margin:3px 3px 0 0}.calc{background:var(--field);border-radius:12px;padding:10px 12px;font-size:13px;margin-top:10px}.calc strong{color:var(--accent)}footer{text-align:center;color:var(--muted);font-size:12px;padding:4px 16px 24px}
 @media(max-width:850px){main{grid-template-columns:1fr}.report{position:static}.report textarea{min-height:340px}}@media(max-width:520px){.grid,.grid.three{grid-template-columns:1fr 1fr}section.card{padding:14px}header h1{font-size:23px}}
 </style>
- <link rel="icon" type="image/png" href="./holterreport-icon.png">
-<link rel="apple-touch-icon" href="./holterreport-icon.png">
 </head>
 <body>
 <header><h1>HolterReport</h1><p>Générateur de comptes rendus de Holter ECG · Version 1.1</p></header>

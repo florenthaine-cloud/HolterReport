@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="HolterReport">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
 <title>HolterReport — Générateur de compte rendu</title>
 
 <link rel="icon" type="image/png" href="./holterreport-icon.png">
@@ -183,14 +184,15 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:4px 16px 24px
 <div class="field"><label for="pauseMax">Pause maximale (s)</label><input id="pauseMax" type="number" min="0" step="0.1" placeholder="—"></div>
 <div class="field"><label for="pauseTime">Heure de la pause maximale</label><input id="pauseTime" placeholder="HH:MM:SS"></div>
 </div>
+
 <h3>Commentaires complémentaires</h3>
 <textarea id="comments" placeholder="Autres constatations à intégrer au compte rendu…"></textarea>
 </section>
 
 <div class="actions">
-<button class="primary" id="generate">Générer le rapport</button>
-<button class="secondary" id="example">Exemple de rapport</button>
-<button class="secondary" id="reset">Réinitialiser</button>
+<button type="button" class="primary" id="generate">Générer le rapport</button>
+<button type="button" class="secondary" id="example">Exemple de rapport</button>
+<button type="button" class="secondary" id="reset">Réinitialiser</button>
 </div>
 </div>
 
@@ -198,8 +200,8 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:4px 16px 24px
 <h2>5. Compte rendu généré</h2>
 <textarea id="report" aria-label="Compte rendu généré" placeholder="Le compte rendu apparaîtra ici après avoir complété les champs et cliqué sur « Générer le rapport »."></textarea>
 <div class="actions">
-<button class="primary" id="copy">Copier le compte rendu</button>
-<button class="secondary" id="selectAll">Tout sélectionner</button>
+<button type="button" class="primary" id="copy">Copier le compte rendu</button>
+<button type="button" class="secondary" id="selectAll">Tout sélectionner</button>
 </div>
 <div class="status" id="status">Les champs laissés vides sont généralement omis du rapport. Vérifiez toujours le texte généré avant validation médicale.</div>
 </section>
@@ -208,111 +210,293 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:4px 16px 24px
 <footer>Conçu et développé par Dr Haine Florent<br>HolterReport · Outil d’aide à la rédaction — validation médicale requise</footer>
 
 <script>
-const $=id=>document.getElementById(id);
-const val=id=>$(id).value.trim();
-const num=id=>val(id)===''?null:Number(val(id));
-const count=id=>num(id)??0;
-const fmt=n=>Number.isFinite(n)?n.toLocaleString('fr-BE',{maximumFractionDigits:2}):'';
+'use strict';
 
-function metrics(prefix,countId,burdenId){
- const n=count(countId),qrs=num('qrs'),hr=num('hrmean'),h=num('analyzable');
- const denom=qrs!==null&&qrs>0?qrs:(hr!==null&&hr>0&&h!==null&&h>0?hr*60*h*60:null);
- const burden=num(burdenId)!==null?num(burdenId):(denom&&denom>0?n/denom*100:null);
- const per24=h&&h>0?n*24/h:null;
- return {n,burden,per24,denom,estimated:!(qrs!==null&&qrs>0),hours:h};
+const $ = id => document.getElementById(id);
+const val = id => $(id).value.trim();
+const num = id => val(id) === '' ? null : Number(val(id));
+const count = id => num(id) ?? 0;
+const fmt = n => Number.isFinite(n)
+  ? n.toLocaleString('fr-BE', {maximumFractionDigits: 2})
+  : '';
+
+function metrics(countId, burdenId) {
+  const n = count(countId);
+  const qrs = num('qrs');
+  const hr = num('hrmean');
+  const hours = num('analyzable');
+
+  let denominator = null;
+
+  if (qrs !== null && qrs > 0) {
+    denominator = qrs;
+  } else if (hr !== null && hr > 0 && hours !== null && hours > 0) {
+    denominator = hr * 60 * hours;
+  }
+
+  const manualBurden = num(burdenId);
+  const burden = manualBurden !== null
+    ? manualBurden
+    : denominator !== null && denominator > 0
+      ? n / denominator * 100
+      : null;
+
+  const per24 = hours !== null && hours > 0
+    ? n * 24 / hours
+    : null;
+
+  return {
+    n,
+    burden,
+    per24,
+    denominator,
+    estimated: !(qrs !== null && qrs > 0),
+    hours
+  };
 }
 
-function autoFreq(kind,m){
- if(m.n===0)return 'absentes';
- if(kind==='pvc'){
-  if(m.burden!==null&&m.burden>20)return 'très fréquentes';
-  if(m.per24!==null&&m.per24>=500)return 'fréquentes';
+function autoFreq(kind, m) {
+  if (m.n === 0) return 'absentes';
+
+  if (kind === 'pvc') {
+    if (m.burden !== null && m.burden > 20) return 'très fréquentes';
+    if (m.per24 !== null && m.per24 >= 500) return 'fréquentes';
+    return 'sporadiques';
+  }
+
+  if (m.per24 !== null && m.per24 > 500) return 'très fréquentes';
+  if (m.per24 !== null && m.per24 >= 100) return 'fréquentes';
   return 'sporadiques';
- }
- if(m.per24!==null&&m.per24>500)return 'très fréquentes';
- if(m.per24!==null&&m.per24>=100)return 'fréquentes';
- return 'sporadiques';
 }
 
-function updateCalc(){
- for(const [kind,cid,bid,box] of [['pvc','pvc','pvcBurden','pvcCalc'],['pac','pac','pacBurden','pacCalc']]){
-  const m=metrics(kind,cid,bid),freq=val(kind==='pvc'?'pvcFreq':'pacFreq');
-  const label=freq==='auto'?autoFreq(kind,m):freq;
-  $(box).innerHTML=`<div>Charge calculée : <strong>${m.burden===null?'indisponible':fmt(m.burden)+' %'}</strong> · Nombre ramené à 24 h : <strong>${m.per24===null?'indisponible':fmt(m.per24)}</strong> · Qualification : <strong>${label}</strong></div><div class="hint">${m.burden!==null&&m.estimated&&num(bid)===null?'Charge estimée à partir de la FC moyenne et de la durée analysable.':m.burden!==null&&num(bid)!==null?'Charge saisie manuellement.':m.burden!==null?'Charge calculée à partir du nombre total de QRS.':'Renseigner la FC moyenne et la durée analysable, ou le nombre total de QRS, pour calculer la charge.'} Les catégories de fréquence sont des conventions descriptives configurables, pas une classification officielle universelle de l’ESC.</div>`;
- }
+function updateCalc() {
+  const configs = [
+    {kind:'pvc', countId:'pvc', burdenId:'pvcBurden', freqId:'pvcFreq', boxId:'pvcCalc'},
+    {kind:'pac', countId:'pac', burdenId:'pacBurden', freqId:'pacFreq', boxId:'pacCalc'}
+  ];
+
+  configs.forEach(config => {
+    const m = metrics(config.countId, config.burdenId);
+    const selectedFreq = val(config.freqId);
+    const label = selectedFreq === 'auto'
+      ? autoFreq(config.kind, m)
+      : selectedFreq;
+
+    let explanation = 'Renseigner la FC moyenne et la durée analysable, ou le nombre total de QRS, pour calculer la charge.';
+
+    if (m.burden !== null && m.estimated && num(config.burdenId) === null) {
+      explanation = 'Charge estimée à partir de la FC moyenne et de la durée analysable.';
+    } else if (m.burden !== null && num(config.burdenId) !== null) {
+      explanation = 'Charge saisie manuellement.';
+    } else if (m.burden !== null) {
+      explanation = 'Charge calculée à partir du nombre total de QRS.';
+    }
+
+    $(config.boxId).innerHTML =
+      `<div>Charge calculée : <strong>${m.burden === null ? 'indisponible' : fmt(m.burden) + ' %'}</strong>` +
+      ` · Nombre ramené à 24 h : <strong>${m.per24 === null ? 'indisponible' : fmt(m.per24)}</strong>` +
+      ` · Qualification : <strong>${label}</strong></div>` +
+      `<div class="hint">${explanation} Les catégories de fréquence sont des conventions descriptives et non une classification officielle universelle de l’ESC.</div>`;
+  });
 }
 
-function nonzero(id){return count(id)>0}
-function detailParts(ids){return ids.filter(([id])=>val(id)!=='').map(([id,label])=>`${label} ${val(id)}`)}
-
-function generate(){
- const lines=[];
- const duration=num('duration'),analyzable=num('analyzable');
- if(duration!==null)lines.push(`La durée de l’enregistrement est de ${fmt(duration)} h${analyzable!==null?` (durée analysable : ${fmt(analyzable)} h)`:''}.`);
-
- const hparts=detailParts([['hrmean','la fréquence cardiaque moyenne est de'],['hrmin','la fréquence cardiaque minimale est de'],['hrmax','la fréquence cardiaque maximale est de']]);
- if(hparts.length)lines.push(hparts.map(s=>s+' bpm.').join('\n').replace('la fréquence cardiaque moyenne est de','La fréquence cardiaque moyenne est de'));
-
- const rhythm=val('rhythm'),rhythmOther=val('rhythmOther');
- const rhythms={sinusal:'un rythme sinusal',fa:'une fibrillation auriculaire',flutter:'un flutter auriculaire',stimule:'un rythme stimulé',autre:rhythmOther||'un rythme à préciser'};
- lines.push(`Le rythme de base est ${rhythms[rhythm]}.`);
-
- if($('avb').checked)lines.push(`Présence d’un bloc atrio-ventriculaire${val('conduction')?` (${val('conduction')})`:''}.`);
- else lines.push('Absence de bloc atrio-ventriculaire rapporté.');
- if($('bbb').checked)lines.push('Présence d’un bloc de branche.');
- else lines.push('Absence de bloc de branche rapporté.');
-
- const pvc=metrics('pvc','pvc','pvcBurden'),pf=val('pvcFreq')==='auto'?autoFreq('pvc',metrics('pvc','pvc','pvcBurden')):val('pvcFreq');
- if(pvc.n>0){
-  let s=`${pf.charAt(0).toUpperCase()+pf.slice(1)} ESV`;
-  const qualifiers=[];
-  if(nonzero('pvcPairs'))qualifiers.push('avec '+fmt(count('pvcPairs'))+' doublet(s)');
-  if(val('pvcMorph')!=='non précisé')qualifiers.push(val('pvcMorph'));
-  if(val('pvcPattern'))qualifiers.push(val('pvcPattern'));
-  if(qualifiers.length)s+=`, ${qualifiers.join(', ')}`;
-  s+=`. Nombre total : ${fmt(pvc.n)}${pvc.per24!==null?` (soit environ ${fmt(pvc.per24)} par 24 h)`:''}.`;
-  if(pvc.burden!==null)s+=` Charge en ESV de ${fmt(pvc.burden)} %${pvc.estimated&&num('pvcBurden')===null?' (estimée)':num('pvcBurden')!==null?' (saisie)':''} des battements totaux.`;
-  lines.push(s);
- }else lines.push('Absence d’ESV.');
-
- const pac=metrics('pac','pac','pacBurden'),paf=val('pacFreq')==='auto'?autoFreq('pac',metrics('pac','pac','pacBurden')):val('pacFreq');
- if(pac.n>0){
-  let s=`${paf.charAt(0).toUpperCase()+paf.slice(1)} ESSV. Nombre total : ${fmt(pac.n)}${pac.per24!==null?` (soit environ ${fmt(pac.per24)} par 24 h)`:''}.`;
-  if(nonzero('pacPairs'))s+=` ${fmt(count('pacPairs'))} doublet(s) d’ESSV.`;
-  if(pac.burden!==null)s+=` Charge en ESSV de ${fmt(pac.burden)} % des battements totaux${pac.estimated&&num('pacBurden')===null?' (estimée)':''}.`;
-  lines.push(s);
- }else lines.push('Absence d’ESSV.');
-
- if(nonzero('vt')){
-  let s=`Présence de ${fmt(count('vt'))} épisode(s) de tachycardie ventriculaire${val('vtNotes')?' ('+val('vtNotes')+')':''}`;
-  const d=detailParts([['vtMax','de maximum'],['vtDuration','pour une durée maximale de'],['vtTime','à'],['vtRate','avec une fréquence maximale de']]);
-  if(d.length)s+=` : ${d.join(' ; ')}${val('vtRate')?' bpm':''}`;
-  lines.push(s+'.');
- }else lines.push('Absence d’épisode de tachycardie ventriculaire rapporté.');
-
- if(nonzero('escape'))lines.push(`Présence de ${fmt(count('escape'))} épisode(s) de rythme idioventriculaire accéléré (RIVA)${val('escapeMax')?`, de ${val('escapeMax')} complexes au maximum`:''}${val('escapeTime')?` à ${val('escapeTime')}`:''}.`);
- if(nonzero('ventEscape'))lines.push(`Présence de ${fmt(count('ventEscape'))} épisode(s) de rythme ventriculaire d’échappement${val('ventEscapeMax')?`, de ${val('ventEscapeMax')} complexes au maximum`:''}${val('ventEscapeTime')?` à ${val('ventEscapeTime')}`:''}.`);
-
- if(nonzero('pauses'))lines.push(`Présence de ${fmt(count('pauses'))} pause(s)${val('pauseMax')?`, pause maximale de ${val('pauseMax')} s`:''}${val('pauseTime')?` à ${val('pauseTime')}`:''}.`);
- else lines.push('Absence de pause rapportée.');
-
- if(nonzero('brady'))lines.push(`Présence de ${fmt(count('brady'))} épisode(s) de bradycardie${val('bradyMin')?`, fréquence minimale de ${val('bradyMin')} bpm`:''}${val('bradyTime')?` à ${val('bradyTime')}`:''}.`);
- else lines.push('Absence d’épisode de bradycardie rapporté.');
-
- if(nonzero('svt'))lines.push(`Présence de ${fmt(count('svt'))} salve(s) de tachycardie supraventriculaire${val('svtMax')?`, jusqu’à ${val('svtMax')} complexes`:''}${val('svtDuration')?`, durée maximale de ${val('svtDuration')} s`:''}${val('svtTime')?` à ${val('svtTime')}`:''}${val('svtRate')?`, fréquence maximale de ${val('svtRate')} bpm`:''}.`);
- else lines.push('Absence de salve de TSV rapportée.');
-
- if($('paced').checked||rhythm==='stimule')lines.push('Enregistrement d’un rythme stimulé.');
- if($('symptoms').checked)lines.push(`Le patient rapporte des symptômes durant l’enregistrement${val('symptomText')?` : ${val('symptomText')}`}.`);
- else lines.push('Le patient ne rapporte aucune plainte durant l’enregistrement.');
-
- if(val('comments'))lines.push(val('comments'));
- $('report').value=lines.join('\n\n');
- $('status').textContent='Rapport généré. Vérifiez les données, les unités et la formulation avant de le valider.';
+function nonzero(id) {
+  return count(id) > 0;
 }
 
-function example(){
- $('report').value=`La durée de l’enregistrement est de 21,5 h.
+function detailParts(ids) {
+  return ids
+    .filter(([id]) => val(id) !== '')
+    .map(([id, label]) => `${label} ${val(id)}`);
+}
+
+function generate() {
+  const lines = [];
+  const duration = num('duration');
+  const analyzable = num('analyzable');
+
+  if (duration !== null) {
+    lines.push(
+      `La durée de l’enregistrement est de ${fmt(duration)} h` +
+      `${analyzable !== null ? ` (durée analysable : ${fmt(analyzable)} h)` : ''}.`
+    );
+  }
+
+  const hrParts = [];
+  if (num('hrmean') !== null) hrParts.push(`La fréquence cardiaque moyenne est de ${fmt(num('hrmean'))} bpm.`);
+  if (num('hrmin') !== null) hrParts.push(`La fréquence cardiaque minimale est de ${fmt(num('hrmin'))} bpm.`);
+  if (num('hrmax') !== null) hrParts.push(`La fréquence cardiaque maximale est de ${fmt(num('hrmax'))} bpm.`);
+  if (hrParts.length) lines.push(hrParts.join('\n'));
+
+  const rhythm = val('rhythm');
+  const rhythmOther = val('rhythmOther');
+
+  const rhythms = {
+    sinusal: 'un rythme sinusal',
+    fa: 'une fibrillation auriculaire',
+    flutter: 'un flutter auriculaire',
+    stimule: 'un rythme stimulé',
+    autre: rhythmOther || 'un rythme à préciser'
+  };
+
+  lines.push(`Le rythme de base est ${rhythms[rhythm]}.`);
+
+  if ($('avb').checked) {
+    lines.push(`Présence d’un bloc atrio-ventriculaire${val('conduction') ? ` (${val('conduction')})` : ''}.`);
+  } else {
+    lines.push('Absence de bloc atrio-ventriculaire rapporté.');
+  }
+
+  if ($('bbb').checked) {
+    lines.push('Présence d’un bloc de branche.');
+  } else {
+    lines.push('Absence de bloc de branche rapporté.');
+  }
+
+  const pvc = metrics('pvc', 'pvcBurden');
+  const pvcFreq = val('pvcFreq') === 'auto'
+    ? autoFreq('pvc', pvc)
+    : val('pvcFreq');
+
+  if (pvc.n > 0) {
+    let s = `${pvcFreq.charAt(0).toUpperCase() + pvcFreq.slice(1)} ESV`;
+    const qualifiers = [];
+
+    if (nonzero('pvcPairs')) qualifiers.push(`avec ${fmt(count('pvcPairs'))} doublet(s)`);
+    if (val('pvcMorph') !== 'non précisé') qualifiers.push(val('pvcMorph'));
+    if (val('pvcPattern')) qualifiers.push(val('pvcPattern'));
+
+    if (qualifiers.length) s += `, ${qualifiers.join(', ')}`;
+
+    s += `. Nombre total : ${fmt(pvc.n)}`;
+    if (pvc.per24 !== null) s += ` (soit environ ${fmt(pvc.per24)} par 24 h)`;
+    s += '.';
+
+    if (pvc.burden !== null) {
+      const burdenSource = num('pvcBurden') !== null
+        ? ' (saisie)'
+        : pvc.estimated ? ' (estimée)' : ' (calculée)';
+      s += ` Charge en ESV de ${fmt(pvc.burden)} %${burdenSource} des battements totaux.`;
+    }
+
+    lines.push(s);
+  } else {
+    lines.push('Absence d’ESV.');
+  }
+
+  const pac = metrics('pac', 'pacBurden');
+  const pacFreq = val('pacFreq') === 'auto'
+    ? autoFreq('pac', pac)
+    : val('pacFreq');
+
+  if (pac.n > 0) {
+    let s = `${pacFreq.charAt(0).toUpperCase() + pacFreq.slice(1)} ESSV. Nombre total : ${fmt(pac.n)}`;
+
+    if (pac.per24 !== null) s += ` (soit environ ${fmt(pac.per24)} par 24 h)`;
+    s += '.';
+
+    if (nonzero('pacPairs')) s += ` ${fmt(count('pacPairs'))} doublet(s) d’ESSV.`;
+
+    if (pac.burden !== null) {
+      const burdenSource = num('pacBurden') !== null
+        ? ' (saisie)'
+        : pac.estimated ? ' (estimée)' : ' (calculée)';
+      s += ` Charge en ESSV de ${fmt(pac.burden)} %${burdenSource} des battements totaux.`;
+    }
+
+    lines.push(s);
+  } else {
+    lines.push('Absence d’ESSV.');
+  }
+
+  if (nonzero('vt')) {
+    let s = `Présence de ${fmt(count('vt'))} épisode(s) de tachycardie ventriculaire`;
+
+    if (val('vtNotes')) s += ` (${val('vtNotes')})`;
+
+    const details = detailParts([
+      ['vtMax', 'maximum'],
+      ['vtDuration', 'durée maximale (s) :'],
+      ['vtTime', 'à'],
+      ['vtRate', 'fréquence maximale (bpm) :']
+    ]);
+
+    if (details.length) s += ` : ${details.join(' ; ')}`;
+    lines.push(s + '.');
+  } else {
+    lines.push('Absence d’épisode de tachycardie ventriculaire rapporté.');
+  }
+
+  if (nonzero('escape')) {
+    lines.push(
+      `Présence de ${fmt(count('escape'))} épisode(s) de rythme idioventriculaire accéléré (RIVA)` +
+      `${val('escapeMax') ? `, de ${val('escapeMax')} complexes au maximum` : ''}` +
+      `${val('escapeTime') ? ` à ${val('escapeTime')}` : ''}.`
+    );
+  }
+
+  if (nonzero('ventEscape')) {
+    lines.push(
+      `Présence de ${fmt(count('ventEscape'))} épisode(s) de rythme ventriculaire d’échappement` +
+      `${val('ventEscapeMax') ? `, de ${val('ventEscapeMax')} complexes au maximum` : ''}` +
+      `${val('ventEscapeTime') ? ` à ${val('ventEscapeTime')}` : ''}.`
+    );
+  }
+
+  if (nonzero('pauses')) {
+    lines.push(
+      `Présence de ${fmt(count('pauses'))} pause(s)` +
+      `${val('pauseMax') ? `, pause maximale de ${val('pauseMax')} s` : ''}` +
+      `${val('pauseTime') ? ` à ${val('pauseTime')}` : ''}.`
+    );
+  } else {
+    lines.push('Absence de pause rapportée.');
+  }
+
+  if (nonzero('brady')) {
+    lines.push(
+      `Présence de ${fmt(count('brady'))} épisode(s) de bradycardie` +
+      `${val('bradyMin') ? `, fréquence minimale de ${val('bradyMin')} bpm` : ''}` +
+      `${val('bradyTime') ? ` à ${val('bradyTime')}` : ''}.`
+    );
+  } else {
+    lines.push('Absence d’épisode de bradycardie rapporté.');
+  }
+
+  if (nonzero('svt')) {
+    lines.push(
+      `Présence de ${fmt(count('svt'))} salve(s) de tachycardie supraventriculaire` +
+      `${val('svtMax') ? `, jusqu’à ${val('svtMax')} complexes` : ''}` +
+      `${val('svtDuration') ? `, durée maximale de ${val('svtDuration')} s` : ''}` +
+      `${val('svtTime') ? ` à ${val('svtTime')}` : ''}` +
+      `${val('svtRate') ? `, fréquence maximale de ${val('svtRate')} bpm` : ''}.`
+    );
+  } else {
+    lines.push('Absence de salve de TSV rapportée.');
+  }
+
+  if ($('paced').checked || rhythm === 'stimule') {
+    lines.push('Enregistrement d’un rythme stimulé.');
+  }
+
+  if ($('symptoms').checked) {
+    const symptomDetails = val('symptomText');
+    lines.push(
+      'Le patient rapporte des symptômes durant l’enregistrement' +
+      (symptomDetails ? ` : ${symptomDetails}` : '') + '.'
+    );
+  } else {
+    lines.push('Le patient ne rapporte aucune plainte durant l’enregistrement.');
+  }
+
+  if (val('comments')) lines.push(val('comments'));
+
+  $('report').value = lines.join('\n\n');
+  $('status').textContent = 'Rapport généré. Vérifiez les données, les unités et la formulation avant de le valider.';
+}
+
+function example() {
+  $('report').value = `La durée de l’enregistrement est de 21,5 h.
 
 La fréquence cardiaque moyenne est de 55 bpm.
 La fréquence cardiaque minimale est de 43 bpm.
@@ -332,43 +516,104 @@ Absence d’ESSV.
 Absence de salve de TSV rapportée.
 
 Le patient ne rapporte aucune plainte durant l’enregistrement.`;
- $('status').textContent='Exemple affiché : il s’agit d’un texte illustratif, pas des données actuellement saisies.';
+
+  $('status').textContent = 'Exemple affiché : il s’agit d’un texte illustratif, pas des données actuellement saisies.';
 }
 
-function resetForm(){
- document.querySelectorAll('#form input').forEach(e=>{if(e.type==='checkbox')e.checked=false;else e.value=''});
- document.querySelectorAll('#form select').forEach(e=>e.selectedIndex=0);
- $('duration').value='24';$('analyzable').value='24';$('hrmean').value='73';$('hrmin').value='48';$('hrmax').value='105';
- $('pvc').value='0';$('pac').value='0';$('pvcPairs').value='0';$('pacPairs').value='0';
- $('vt').value='0';$('svt').value='0';$('escape').value='0';$('ventEscape').value='0';$('brady').value='0';$('pauses').value='0';
- $('report').value='';$('rhythmOtherWrap').hidden=true;updateCalc();$('status').textContent='Formulaire réinitialisé.';
+function resetForm() {
+  document.querySelectorAll('#form input').forEach(element => {
+    if (element.type === 'checkbox') {
+      element.checked = false;
+    } else {
+      element.value = '';
+    }
+  });
+
+  document.querySelectorAll('#form select').forEach(element => {
+    element.selectedIndex = 0;
+  });
+
+  $('duration').value = '24';
+  $('analyzable').value = '24';
+  $('hrmean').value = '73';
+  $('hrmin').value = '48';
+  $('hrmax').value = '105';
+  $('pvc').value = '0';
+  $('pac').value = '0';
+  $('pvcPairs').value = '0';
+  $('pacPairs').value = '0';
+  $('vt').value = '0';
+  $('svt').value = '0';
+  $('escape').value = '0';
+  $('ventEscape').value = '0';
+  $('brady').value = '0';
+  $('pauses').value = '0';
+
+  $('comments').value = '';
+  $('report').value = '';
+  $('rhythmOtherWrap').hidden = true;
+
+  updateCalc();
+  $('status').textContent = 'Formulaire réinitialisé.';
 }
 
-['duration','analyzable','hrmean','hrmin','hrmax','qrs','pvc','pvcBurden','pvcFreq','pac','pacBurden','pacFreq'].forEach(id=>$(id).addEventListener('input',updateCalc));
-$('rhythm').addEventListener('change',()=>{$('rhythmOtherWrap').hidden=val('rhythm')!=='autre'});
-$('generate').addEventListener('click',generate);
-$('example').addEventListener('click',example);
-$('reset').addEventListener('click',resetForm);
-
-$('copy').addEventListener('click',async()=>{
- if(!$('report').value){$('status').textContent='Générez d’abord le rapport.';return}
- try{
-  await navigator.clipboard.writeText($('report').value);
-  $('status').textContent='Compte rendu copié dans le presse-papiers.';
- }catch(e){
-  $('report').select();
-  document.execCommand('copy');
-  $('status').textContent='Compte rendu sélectionné/copier selon les autorisations du navigateur.';
- }
+[
+  'duration','analyzable','hrmean','hrmin','hrmax','qrs',
+  'pvc','pvcBurden','pvcFreq','pvcPairs','pvcMorph','pvcPattern',
+  'pac','pacBurden','pacFreq','pacPairs'
+].forEach(id => {
+  $(id).addEventListener('input', updateCalc);
+  $(id).addEventListener('change', updateCalc);
 });
-$('selectAll').addEventListener('click',()=>{$('report').focus();$('report').select()});
+
+$('rhythm').addEventListener('change', () => {
+  $('rhythmOtherWrap').hidden = val('rhythm') !== 'autre';
+});
+
+$('generate').addEventListener('click', generate);
+$('example').addEventListener('click', example);
+$('reset').addEventListener('click', resetForm);
+
+$('copy').addEventListener('click', async () => {
+  const reportText = $('report').value;
+
+  if (!reportText) {
+    $('status').textContent = 'Générez d’abord le rapport.';
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(reportText);
+    $('status').textContent = 'Compte rendu copié dans le presse-papiers.';
+  } catch (error) {
+    $('report').focus();
+    $('report').select();
+
+    try {
+      const copied = document.execCommand('copy');
+      $('status').textContent = copied
+        ? 'Compte rendu copié dans le presse-papiers.'
+        : 'Texte sélectionné : utilisez ⌘C pour le copier.';
+    } catch (fallbackError) {
+      $('status').textContent = 'Texte sélectionné : utilisez ⌘C pour le copier.';
+    }
+  }
+});
+
+$('selectAll').addEventListener('click', () => {
+  $('report').focus();
+  $('report').select();
+});
+
 updateCalc();
 
-/* Enregistrement du service worker si sw.js est présent */
-if('serviceWorker' in navigator){
- window.addEventListener('load',()=>{
-  navigator.serviceWorker.register('./sw.js').catch(()=>{});
- });
+/* Enregistrement du service worker si sw.js existe */
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(error => {
+      console.warn('Service worker non enregistré :', error);
+    });
+  });
 }
 </script>
 </body>
